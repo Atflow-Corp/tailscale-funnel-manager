@@ -19,6 +19,17 @@ bin/funnel down examples/mental-health-app.json
 bin/funnel status examples/mental-health-app.json
 ```
 
+## Port convention
+
+Use app ports starting from `8000` by default.
+
+Recommended rule of thumb:
+- `8000+` for app funnels
+- keep the anchor funnel separate, typically on `80`
+- when onboarding a new app, prefer moving the local dev server to an `8000` range port instead of picking an arbitrary `8081`, `5173`, or similar port
+
+This keeps URLs predictable and makes multi-app Funnel usage easier to reason about.
+
 ## Config shape
 
 See `schemas/funnel-app.schema.json` and `examples/mental-health-app.json`.
