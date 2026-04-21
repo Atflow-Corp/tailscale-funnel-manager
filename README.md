@@ -21,20 +21,26 @@ bin/funnel status examples/mental-health-app.json
 
 ## Port convention
 
-Use app ports starting from `8000` by default.
+Use app ports starting from `8000` by default for local services.
 
 Recommended rule of thumb:
-- `8000+` for app funnels
-- keep the anchor funnel separate, typically on `80`
-- when onboarding a new app, prefer moving the local dev server to an `8000` range port instead of picking an arbitrary `8081`, `5173`, or similar port
+- local app ports can freely use `8000+`
+- public Funnel exposure is constrained by Tailscale rules and is best treated separately from local app ports
+- for the simplest public exposure, prefer app `https: false` so Funnel binds the public root URL on 443 to the chosen local port
+- keep the anchor funnel separate when needed for DNS stability
 
-This keeps URLs predictable and makes multi-app Funnel usage easier to reason about.
+This keeps local development predictable while acknowledging that public Funnel ports follow different rules.
 
 ## Config shape
 
 See `schemas/funnel-app.schema.json` and `examples/mental-health-app.json`.
 
-The `funnel.anchor` block keeps a dummy funnel open before the app-specific funnel is opened. This mirrors the old `~/funnel.sh` behavior where one background funnel stayed alive to preserve DNS availability. The default recommendation is to keep both `background` and `https` enabled so multiple funnels can coexist more safely.
+The `funnel.anchor` block keeps a dummy funnel open before the app-specific funnel is opened. This mirrors the old `~/funnel.sh` behavior where one background funnel stayed alive to preserve DNS availability.
+
+In practice, there is an important distinction:
+- local app ports are flexible
+- public Funnel exposure has port constraints from Tailscale
+- setting app `funnel.https` to `false` can be the most practical way to expose one app publicly on the root Funnel URL
 
 ## Roadmap
 
