@@ -21,3 +21,9 @@ bin/funnel status examples/mental-health-app.json
 ## Config shape
 
 See `schemas/funnel-app.schema.json` and `examples/mental-health-app.json`.
+
+## Roadmap
+
+- inject env values into app launch
+- add HTTP healthcheck probing
+- support hostname-aware funnel config
