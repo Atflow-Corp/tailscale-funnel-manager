@@ -5,6 +5,7 @@ JSON config based helper for launching a local app and managing `tailscale funne
 ## Goals
 
 - keep per-app config in JSON
+- optionally keep one dummy anchor funnel open so the machine DNS stays warm
 - launch app process from config
 - wait for local port readiness
 - open `tailscale funnel`
@@ -22,8 +23,11 @@ bin/funnel status examples/mental-health-app.json
 
 See `schemas/funnel-app.schema.json` and `examples/mental-health-app.json`.
 
+The `funnel.anchor` block keeps a dummy funnel open before the app-specific funnel is opened. This mirrors the old `~/funnel.sh` behavior where one background funnel stayed alive to preserve DNS availability.
+
 ## Roadmap
 
 - inject env values into app launch
 - add HTTP healthcheck probing
 - support hostname-aware funnel config
+- make anchor funnel strategy configurable per machine or per app

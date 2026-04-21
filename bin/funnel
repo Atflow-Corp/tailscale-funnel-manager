@@ -69,6 +69,24 @@ open_funnel() {
   "${cmd[@]}"
 }
 
+ensure_anchor_funnel() {
+  local config="$1"
+  local enabled port https bg
+  enabled="$(json_get funnel.anchor.enabled "$config")"
+  port="$(json_get funnel.anchor.port "$config")"
+  https="$(json_get funnel.anchor.https "$config")"
+  bg="$(json_get funnel.anchor.background "$config")"
+
+  [[ -z "$enabled" ]] && enabled=true
+  [[ "$enabled" != "true" ]] && return 0
+  [[ -z "$port" ]] && port=80
+  [[ -z "$https" ]] && https=false
+  [[ -z "$bg" ]] && bg=true
+
+  echo "==> ensuring anchor funnel on port $port"
+  open_funnel "$port" "$https" "$bg"
+}
+
 start_app() {
   local config="$1"
   local command cwd log_path pid_file
@@ -133,6 +151,7 @@ main() {
   case "$action" in
     up)
       echo "==> starting $app_name on port $port"
+      ensure_anchor_funnel "$config"
       start_app "$config"
       if wait_for_port "$port" "$startup_wait"; then
         echo "==> opening tailscale funnel"

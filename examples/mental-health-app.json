@@ -9,6 +9,12 @@
   "pidFile": "/tmp/mental-health-app.pid",
   "funnel": {
     "https": true,
-    "background": true
+    "background": true,
+    "anchor": {
+      "enabled": true,
+      "port": 80,
+      "https": false,
+      "background": true
+    }
   }
 }

@@ -53,6 +53,30 @@
         "background": {
           "type": "boolean",
           "default": true
+        },
+        "anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "default": 80
+            },
+            "https": {
+              "type": "boolean",
+              "default": false
+            },
+            "background": {
+              "type": "boolean",
+              "default": true
+            }
+          }
         }
       }
     },
