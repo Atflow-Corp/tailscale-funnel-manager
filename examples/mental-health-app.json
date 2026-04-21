@@ -1,0 +1,14 @@
+{
+  "appName": "mental-health-app",
+  "port": 8000,
+  "cwd": "/Users/atflow/repos/mental-health-app",
+  "command": "npm run dev",
+  "startupWaitSeconds": 20,
+  "healthcheckPath": "/",
+  "logPath": "/tmp/mental-health-app.log",
+  "pidFile": "/tmp/mental-health-app.pid",
+  "funnel": {
+    "https": true,
+    "background": true
+  }
+}
