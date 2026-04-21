@@ -13,7 +13,7 @@
     "anchor": {
       "enabled": true,
       "port": 80,
-      "https": false,
+      "https": true,
       "background": true
     }
   }

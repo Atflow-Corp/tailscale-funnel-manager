@@ -23,7 +23,7 @@ bin/funnel status examples/mental-health-app.json
 
 See `schemas/funnel-app.schema.json` and `examples/mental-health-app.json`.
 
-The `funnel.anchor` block keeps a dummy funnel open before the app-specific funnel is opened. This mirrors the old `~/funnel.sh` behavior where one background funnel stayed alive to preserve DNS availability.
+The `funnel.anchor` block keeps a dummy funnel open before the app-specific funnel is opened. This mirrors the old `~/funnel.sh` behavior where one background funnel stayed alive to preserve DNS availability. The default recommendation is to keep both `background` and `https` enabled so multiple funnels can coexist more safely.
 
 ## Roadmap
 

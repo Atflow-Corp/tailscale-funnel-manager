@@ -80,7 +80,7 @@ ensure_anchor_funnel() {
   [[ -z "$enabled" ]] && enabled=true
   [[ "$enabled" != "true" ]] && return 0
   [[ -z "$port" ]] && port=80
-  [[ -z "$https" ]] && https=false
+  [[ -z "$https" ]] && https=true
   [[ -z "$bg" ]] && bg=true
 
   echo "==> ensuring anchor funnel on port $port"
