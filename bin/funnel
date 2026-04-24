@@ -9,6 +9,10 @@ Usage:
   funnel up <config.json>
   funnel down <config.json>
   funnel status <config.json>
+
+Config schema: schemas/funnel-app.schema.json
+  - 최상위 "anchor" (선택): config 단위로 1개만 기동
+  - 최상위 "apps" (필수, 배열): 각 원소가 하나의 앱/funnel
 USAGE
 }
 
@@ -19,30 +23,61 @@ require_cmd() {
   }
 }
 
-json_get() {
-  local expr="$1"
-  local file="$2"
-  python3 - "$expr" "$file" <<'PY'
-import json, sys
-expr = sys.argv[1]
-path = expr.split('.') if expr else []
-with open(sys.argv[2], 'r', encoding='utf-8') as f:
-    data = json.load(f)
-cur = data
-for part in path:
-    if not part:
-        continue
-    if isinstance(cur, dict) and part in cur:
-        cur = cur[part]
-    else:
-        print("")
-        raise SystemExit(0)
-if isinstance(cur, bool):
-    print("true" if cur else "false")
-elif cur is None:
-    print("")
-else:
-    print(cur)
+# json_plan: config 파일을 파싱해서 line 단위 key=value 형태 plan을 stdout으로 출력.
+# 이후 bash가 단순히 읽고 반복만 하면 되도록 python에서 모든 기본값/정규화를 끝낸다.
+json_plan() {
+  local config="$1"
+  python3 - "$config" <<'PY'
+import json, sys, base64, shlex
+
+def b(v, default):
+    if v is None:
+        return "true" if default else "false"
+    return "true" if bool(v) else "false"
+
+def s(v, default=""):
+    if v is None:
+        return default
+    return str(v)
+
+def emit(key, value):
+    # shlex.quote로 감싸서 eval 안전성 확보
+    print(f"{key}={shlex.quote(str(value))}")
+
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    cfg = json.load(f)
+
+anchor = cfg.get("anchor") or {}
+anchor_enabled = bool(anchor.get("enabled", False))
+emit("ANCHOR_ENABLED", b(anchor_enabled, False))
+emit("ANCHOR_PORT", s(anchor.get("port", 80)))
+emit("ANCHOR_HTTPS", b(anchor.get("https"), True))
+emit("ANCHOR_BG", b(anchor.get("background"), True))
+
+apps = cfg.get("apps") or []
+emit("APP_COUNT", len(apps))
+for i, app in enumerate(apps):
+    name = s(app.get("appName", f"app{i}"))
+    port = s(app.get("port", ""))
+    cwd = s(app.get("cwd", ""))
+    command = s(app.get("command", ""))
+    wait = s(app.get("startupWaitSeconds", 15))
+    log_path = s(app.get("logPath", "")) or f"/tmp/funnel-{name}.log"
+    pid_file = s(app.get("pidFile", "")) or f"/tmp/funnel-{name}.pid"
+    funnel = app.get("funnel") or {}
+    https = b(funnel.get("https"), True)
+    bg = b(funnel.get("background"), True)
+    # command는 base64로 보존 (공백/따옴표 escape 안전)
+    cmd_b64 = base64.b64encode(command.encode("utf-8")).decode("ascii")
+    emit(f"APP_{i}_NAME", name)
+    emit(f"APP_{i}_PORT", port)
+    emit(f"APP_{i}_CWD", cwd)
+    emit(f"APP_{i}_CMD_B64", cmd_b64)
+    emit(f"APP_{i}_WAIT", wait)
+    emit(f"APP_{i}_LOG", log_path)
+    emit(f"APP_{i}_PID", pid_file)
+    emit(f"APP_{i}_HTTPS", https)
+    emit(f"APP_{i}_BG", bg)
 PY
 }
 
@@ -65,63 +100,130 @@ open_funnel() {
   local bg="$3"
   local cmd=("$TAILSCALE_BIN" funnel)
   [[ "$bg" == "true" ]] && cmd+=(--bg)
-  [[ "$https" == "true" ]] && cmd+=(--https "$port" "$port") || cmd+=("$port")
+  if [[ "$https" == "true" ]]; then
+    cmd+=(--https "$port" "$port")
+  else
+    cmd+=("$port")
+  fi
   "${cmd[@]}"
 }
 
 ensure_anchor_funnel() {
-  local config="$1"
-  local enabled port https bg
-  enabled="$(json_get funnel.anchor.enabled "$config")"
-  port="$(json_get funnel.anchor.port "$config")"
-  https="$(json_get funnel.anchor.https "$config")"
-  bg="$(json_get funnel.anchor.background "$config")"
-
-  [[ -z "$enabled" ]] && enabled=true
-  [[ "$enabled" != "true" ]] && return 0
-  [[ -z "$port" ]] && port=80
-  [[ -z "$https" ]] && https=false
-  [[ -z "$bg" ]] && bg=true
-
-  echo "==> ensuring anchor funnel on port $port"
-  open_funnel "$port" "$https" "$bg"
+  if [[ "$ANCHOR_ENABLED" != "true" ]]; then
+    return 0
+  fi
+  echo "==> ensuring anchor funnel on port $ANCHOR_PORT (https=$ANCHOR_HTTPS, bg=$ANCHOR_BG)"
+  open_funnel "$ANCHOR_PORT" "$ANCHOR_HTTPS" "$ANCHOR_BG"
 }
 
 start_app() {
-  local config="$1"
-  local command cwd log_path pid_file
-  command="$(json_get command "$config")"
-  cwd="$(json_get cwd "$config")"
-  log_path="$(json_get logPath "$config")"
-  pid_file="$(json_get pidFile "$config")"
+  local idx="$1"
+  local name="APP_${idx}_NAME"; name="${!name}"
+  local cwd="APP_${idx}_CWD"; cwd="${!cwd}"
+  local cmd_b64="APP_${idx}_CMD_B64"; cmd_b64="${!cmd_b64}"
+  local log_path="APP_${idx}_LOG"; log_path="${!log_path}"
+  local pid_file="APP_${idx}_PID"; pid_file="${!pid_file}"
 
-  [[ -z "$command" ]] && return 0
+  local command
+  command="$(printf '%s' "$cmd_b64" | base64 -d)"
+
+  if [[ -z "$command" ]]; then
+    echo "   ($name) no command — skipping process launch"
+    return 0
+  fi
+
   [[ -z "$cwd" ]] && cwd="$(pwd)"
-  [[ -z "$log_path" ]] && log_path="/tmp/funnel-$(json_get appName "$config").log"
-  [[ -z "$pid_file" ]] && pid_file="/tmp/funnel-$(json_get appName "$config").pid"
 
+  echo "==> starting app: $name (cwd=$cwd, log=$log_path, pid=$pid_file)"
   (
     cd "$cwd"
     nohup sh -lc "$command" >>"$log_path" 2>&1 &
     echo $! >"$pid_file"
   )
-
-  echo "app started, pid file: $pid_file"
 }
 
 stop_app() {
-  local config="$1"
-  local pid_file pid
-  pid_file="$(json_get pidFile "$config")"
-  [[ -z "$pid_file" ]] && pid_file="/tmp/funnel-$(json_get appName "$config").pid"
+  local idx="$1"
+  local name="APP_${idx}_NAME"; name="${!name}"
+  local pid_file="APP_${idx}_PID"; pid_file="${!pid_file}"
   if [[ -f "$pid_file" ]]; then
-    pid="$(cat "$pid_file")"
-    if kill -0 "$pid" >/dev/null 2>&1; then
-      kill "$pid"
-      echo "stopped app pid $pid"
+    local pid
+    pid="$(cat "$pid_file" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
+      kill "$pid" || true
+      echo "   stopped $name (pid $pid)"
     fi
     rm -f "$pid_file"
   fi
+}
+
+cmd_up() {
+  # 앱 기동 실패 시 best-effort 정리를 위해 trap 설정
+  local started_indexes=()
+  cleanup_on_failure() {
+    echo "!! up 실패 — 기동했던 앱/funnel 정리 시도" >&2
+    "$TAILSCALE_BIN" funnel reset || true
+    local j
+    for j in "${started_indexes[@]}"; do
+      stop_app "$j" || true
+    done
+  }
+
+  ensure_anchor_funnel
+
+  local i
+  for ((i=0; i<APP_COUNT; i++)); do
+    local name="APP_${i}_NAME"; name="${!name}"
+    local port="APP_${i}_PORT"; port="${!port}"
+    local wait_s="APP_${i}_WAIT"; wait_s="${!wait_s}"
+    local https="APP_${i}_HTTPS"; https="${!https}"
+    local bg="APP_${i}_BG"; bg="${!bg}"
+
+    start_app "$i"
+    started_indexes+=("$i")
+
+    echo "==> waiting for $name on port $port (up to ${wait_s}s)"
+    if ! wait_for_port "$port" "$wait_s"; then
+      echo "!! $name: port $port did not become ready within ${wait_s}s" >&2
+      cleanup_on_failure
+      exit 1
+    fi
+
+    echo "==> opening funnel for $name (port=$port, https=$https, bg=$bg)"
+    if ! open_funnel "$port" "$https" "$bg"; then
+      echo "!! $name: tailscale funnel open failed" >&2
+      cleanup_on_failure
+      exit 1
+    fi
+  done
+
+  echo "==> all apps up"
+  "$TAILSCALE_BIN" funnel status || true
+}
+
+cmd_down() {
+  echo "==> resetting tailscale funnel"
+  "$TAILSCALE_BIN" funnel reset || true
+
+  local i
+  # 역순으로 정리
+  for ((i=APP_COUNT-1; i>=0; i--)); do
+    stop_app "$i"
+  done
+
+  "$TAILSCALE_BIN" funnel status || true
+}
+
+cmd_status() {
+  local i
+  for ((i=0; i<APP_COUNT; i++)); do
+    local name="APP_${i}_NAME"; name="${!name}"
+    local port="APP_${i}_PORT"; port="${!port}"
+    echo "==> $name (port $port)"
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN || true
+  done
+  echo "==> tailscale funnel status"
+  "$TAILSCALE_BIN" funnel status || true
 }
 
 main() {
@@ -137,46 +239,16 @@ main() {
   [[ -n "$action" && -n "$config" ]] || { usage; exit 1; }
   [[ -f "$config" ]] || { echo "config not found: $config" >&2; exit 1; }
 
-  local app_name port startup_wait https bg
-  app_name="$(json_get appName "$config")"
-  port="$(json_get port "$config")"
-  startup_wait="$(json_get startupWaitSeconds "$config")"
-  https="$(json_get funnel.https "$config")"
-  bg="$(json_get funnel.background "$config")"
-
-  [[ -z "$startup_wait" ]] && startup_wait=15
-  [[ -z "$https" ]] && https=false
-  [[ -z "$bg" ]] && bg=true
+  # plan을 한번에 파싱해서 쉘 변수로 로드 (python이 shlex.quote로 이미 감싸둔 상태)
+  local plan
+  plan="$(json_plan "$config")"
+  eval "$(printf '%s\n' "$plan" | sed 's/^/export /')"
 
   case "$action" in
-    up)
-      echo "==> starting $app_name on port $port"
-      ensure_anchor_funnel "$config"
-      start_app "$config"
-      if wait_for_port "$port" "$startup_wait"; then
-        echo "==> opening tailscale funnel"
-        open_funnel "$port" "$https" "$bg"
-        "$TAILSCALE_BIN" funnel status
-      else
-        echo "port $port did not become ready within ${startup_wait}s" >&2
-        exit 1
-      fi
-      ;;
-    down)
-      echo "==> resetting tailscale funnel"
-      "$TAILSCALE_BIN" funnel reset
-      stop_app "$config"
-      "$TAILSCALE_BIN" funnel status || true
-      ;;
-    status)
-      echo "==> status for $app_name"
-      lsof -nP -iTCP:"$port" -sTCP:LISTEN || true
-      "$TAILSCALE_BIN" funnel status
-      ;;
-    *)
-      usage
-      exit 1
-      ;;
+    up) cmd_up ;;
+    down) cmd_down ;;
+    status) cmd_status ;;
+    *) usage; exit 1 ;;
   esac
 }
 
