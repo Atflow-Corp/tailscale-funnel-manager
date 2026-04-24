@@ -92,7 +92,7 @@ bin/funnel status examples/config.json
   5. 루프 종료 후 성공/실패 요약 출력. 성공이 1개라도 있으면 exit 0, 전부 실패할 때만 exit 1.
 - `down`:
   1. `tailscale funnel reset` 1회
-  2. `apps[]`를 **역순**으로 pidFile 기반 정리
+  2. `apps[]`를 **역순**으로 pidFile 기반 정리. 이때 `stop_app`은 저장된 PID를 PGID로 간주하고 `kill -TERM -<pid>`로 **프로세스 그룹 전체**를 종료한다. 즉 `pnpm run dev`처럼 `sh → pnpm → node(vite)` 같은 자식 트리를 가진 앱도 자식까지 한 번에 정리된다 (TERM 후 최대 5초 대기 → 살아있으면 KILL).
   3. `tailscale funnel status` 출력
 - `status`:
   1. 각 앱의 `port`에 대해 `lsof -nP -iTCP:<port> -sTCP:LISTEN`
