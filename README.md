@@ -19,7 +19,7 @@ bin/funnel down   examples/config.json
 bin/funnel status examples/config.json
 ```
 
-- `up`: config의 `apps[]`를 순서대로 기동하고 각 앱에 대해 `tailscale funnel`을 오픈.
+- `up`: config의 `apps[]`를 순서대로 기동하고 각 앱에 대해 `tailscale funnel`을 오픈. `funnel up` 은 각 앱을 독립적으로 기동하며, 일부 앱이 실패해도 나머지는 계속 기동한다. 마지막에 성공/실패 요약을 출력한다.
 - `down`: 같은 config를 기반으로 `tailscale funnel reset` 후 `apps[]`를 역순으로 정리.
 - `status`: 같은 config의 포트별 listen 상태 + `tailscale funnel status`.
 
@@ -86,7 +86,10 @@ bin/funnel status examples/config.json
      - 해당 앱의 `port`가 listen 상태가 될 때까지 `startupWaitSeconds`만큼 대기
      - `tailscale funnel`을 해당 앱의 `port`/`funnel.https`/`funnel.background` 설정대로 오픈
   3. 마지막에 `tailscale funnel status` 1회 출력
-  4. 어느 앱이 포트 준비에 실패하면: 에러 로그 + `tailscale funnel reset` + 이미 띄운 앱들을 best-effort로 정리한 뒤 exit 1.
+  4. 앱별 실패 처리:
+     - 포트 준비 실패 → 해당 앱 프로세스 정리 후 다음 앱으로 진행 (`PORT_TIMEOUT`)
+     - `tailscale funnel` 오픈 실패 → 앱 프로세스는 유지하고 다음 앱으로 진행 (`FUNNEL_FAILED`, 로컬에서 포트로 접근 가능)
+  5. 루프 종료 후 성공/실패 요약 출력. 성공이 1개라도 있으면 exit 0, 전부 실패할 때만 exit 1.
 - `down`:
   1. `tailscale funnel reset` 1회
   2. `apps[]`를 **역순**으로 pidFile 기반 정리
