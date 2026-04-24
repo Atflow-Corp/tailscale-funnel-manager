@@ -158,18 +158,11 @@ stop_app() {
 }
 
 cmd_up() {
-  # 앱 기동 실패 시 best-effort 정리를 위해 trap 설정
-  local started_indexes=()
-  cleanup_on_failure() {
-    echo "!! up 실패 — 기동했던 앱/funnel 정리 시도" >&2
-    "$TAILSCALE_BIN" funnel reset || true
-    local j
-    for j in "${started_indexes[@]}"; do
-      stop_app "$j" || true
-    done
-  }
-
   ensure_anchor_funnel
+
+  local successful_apps=()
+  local failed_apps=()
+  local failed_reasons=()
 
   local i
   for ((i=0; i<APP_COUNT; i++)); do
@@ -180,25 +173,54 @@ cmd_up() {
     local bg="APP_${i}_BG"; bg="${!bg}"
 
     start_app "$i"
-    started_indexes+=("$i")
 
     echo "==> waiting for $name on port $port (up to ${wait_s}s)"
     if ! wait_for_port "$port" "$wait_s"; then
-      echo "!! $name: port $port did not become ready within ${wait_s}s" >&2
-      cleanup_on_failure
-      exit 1
+      echo "!! $name: port $port did not become ready within ${wait_s}s — 앱 프로세스 정리 후 다음 앱으로 진행" >&2
+      stop_app "$i" || true
+      failed_apps+=("$name")
+      failed_reasons+=("port $port ready timeout (앱 프로세스 정리됨)")
+      continue
     fi
 
     echo "==> opening funnel for $name (port=$port, https=$https, bg=$bg)"
     if ! open_funnel "$port" "$https" "$bg"; then
-      echo "!! $name: tailscale funnel open failed" >&2
-      cleanup_on_failure
-      exit 1
+      echo "!! $name: tailscale funnel open failed — 앱 프로세스는 유지하고 다음 앱으로 진행" >&2
+      failed_apps+=("$name")
+      failed_reasons+=("tailscale funnel open failed (앱 프로세스는 유지)")
+      continue
     fi
+
+    successful_apps+=("$name")
   done
 
-  echo "==> all apps up"
+  # --- summary ---
+  local succ_n="${#successful_apps[@]}"
+  local fail_n="${#failed_apps[@]}"
+  echo ""
+  echo "==> 기동 결과: 성공 ${succ_n} / 실패 ${fail_n}"
+  local s
+  if ((succ_n > 0)); then
+    for s in "${successful_apps[@]}"; do
+      echo "    ✓ $s"
+    done
+  fi
+  local k
+  for ((k=0; k<fail_n; k++)); do
+    echo "    ✗ ${failed_apps[$k]} (${failed_reasons[$k]})" >&2
+  done
+
+  # 현행과 동일하게 마지막에 funnel status 한 번 출력 (best-effort)
   "$TAILSCALE_BIN" funnel status || true
+
+  # exit code
+  if [[ "$APP_COUNT" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "$succ_n" -eq 0 && "$fail_n" -gt 0 ]]; then
+    exit 1
+  fi
+  return 0
 }
 
 cmd_down() {
