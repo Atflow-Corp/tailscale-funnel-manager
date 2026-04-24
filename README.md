@@ -1,25 +1,33 @@
 # tailscale-funnel-manager
 
-JSON config 하나로 **여러 로컬 앱을 동시에 기동**하고, 각각에 대해 `tailscale funnel`을 열고/닫고 상태를 확인하는 헬퍼.
+**머신당 config 1개.** 그 안에 앱 여러 개를 나열하고, `bin/funnel` 하나로 한 번에 기동/종료/상태확인.
 
-## Goals
+## 운영 원칙
 
-- config 1개 = **여러 앱**
-- 각 앱 프로세스 기동 + 포트 대기 + 개별 funnel 오픈을 순서대로 수행
-- 필요하면 config 단위로 anchor funnel을 하나 유지해 DNS 워밍
-- 종료/상태 확인도 동일 config로 일관되게
+- 한 머신에는 `examples/config.json` 같은 **단일 config 파일 하나**만 둡니다.
+- 그 머신에서 Funnel로 열어야 하는 **모든 앱**을 이 파일의 `apps[]` 안에 나열합니다.
+- 앱을 추가/제거하는 것은 이 파일 하나를 수정하는 것과 같습니다. 여러 config를 돌려쓰지 않습니다.
+- 결과: "이 머신에서 뭐가 떠있어야 하지?" 에 대한 답이 항상 **config 1개**에 들어 있음.
 
 ## Commands
 
+운영 명령은 전부 이 config 하나를 인자로 받습니다.
+
 ```bash
-bin/funnel up     examples/kms.json
-bin/funnel down   examples/kms.json
-bin/funnel status examples/kms.json
+bin/funnel up     examples/config.json
+bin/funnel down   examples/config.json
+bin/funnel status examples/config.json
 ```
+
+- `up`: config의 `apps[]`를 순서대로 기동하고 각 앱에 대해 `tailscale funnel`을 오픈.
+- `down`: 같은 config를 기반으로 `tailscale funnel reset` 후 `apps[]`를 역순으로 정리.
+- `status`: 같은 config의 포트별 listen 상태 + `tailscale funnel status`.
+
+> 다른 config를 쓰지 않는 이유: "지금 이 머신에서 뭐가 떠있는지"의 정답을 한 파일로 고정하기 위함입니다.
 
 ## Config shape
 
-최상위 키는 2개뿐입니다: `anchor`(선택), `apps`(필수, 배열).
+최상위 키는 2개뿐: `anchor`(선택), `apps`(필수, 배열).
 
 ```json
 {
@@ -30,6 +38,17 @@ bin/funnel status examples/kms.json
     "background": true
   },
   "apps": [
+    {
+      "appName": "mental-health-app",
+      "port": 8000,
+      "cwd": "/Users/atflow/repos/mental-health-app",
+      "command": "PORT=8000 node server.js",
+      "startupWaitSeconds": 20,
+      "healthcheckPath": "/",
+      "logPath": "/tmp/mental-health-app.log",
+      "pidFile": "/tmp/mental-health-app.pid",
+      "funnel": { "https": false, "background": true }
+    },
     {
       "appName": "kms-django",
       "port": 10000,
@@ -56,6 +75,8 @@ bin/funnel status examples/kms.json
 }
 ```
 
+이게 `examples/config.json`이며, **이 저장소가 가진 유일한 표준 예시**입니다. 머신마다 자기 환경에 맞게 이 파일을 한 벌 복사/수정해서 쓰면 됩니다.
+
 ### 동작 요약
 
 - `up`:
@@ -65,7 +86,7 @@ bin/funnel status examples/kms.json
      - 해당 앱의 `port`가 listen 상태가 될 때까지 `startupWaitSeconds`만큼 대기
      - `tailscale funnel`을 해당 앱의 `port`/`funnel.https`/`funnel.background` 설정대로 오픈
   3. 마지막에 `tailscale funnel status` 1회 출력
-  4. 어느 앱이 포트 준비에 실패하면: 에러 로그 + `tailscale funnel reset` + 이미 띄운 앱들을 best-effort로 정리한 뒤 exit 1. 세바님이 재실행하기 쉽게 설계.
+  4. 어느 앱이 포트 준비에 실패하면: 에러 로그 + `tailscale funnel reset` + 이미 띄운 앱들을 best-effort로 정리한 뒤 exit 1.
 - `down`:
   1. `tailscale funnel reset` 1회
   2. `apps[]`를 **역순**으로 pidFile 기반 정리
@@ -101,10 +122,13 @@ bin/funnel status examples/kms.json
   - 가장 간단한 공용 노출: 해당 앱의 `funnel.https`를 `false`로 두고 Tailscale이 루트 URL(443)을 로컬 포트로 바인딩.
 - DNS 워밍을 위해 anchor funnel을 하나 따로 유지할 수 있습니다 (`anchor.enabled=true`).
 
-## Examples
+## Example
 
-- `examples/mental-health.json` — 단일 앱
-- `examples/kms.json` — kms-django + kms-react 2앱 동시 기동
+이 저장소는 **예시 파일을 하나만** 둡니다.
+
+- `examples/config.json` — `mental-health-app` + `kms-django` + `kms-react`를 한 config로 관리하는 표준 예시.
+
+머신에 뭘 추가로 띄우고 싶으면, 이 파일의 `apps[]`에 항목을 더하는 식으로 확장하세요. 다른 `*.json`을 늘리지 않는 것이 이 프로젝트의 운영 약속입니다.
 
 ## Roadmap
 
