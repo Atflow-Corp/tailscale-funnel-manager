@@ -207,6 +207,13 @@ stop_app() {
 }
 
 cmd_up() {
+  # up 시작 전 항상 down으로 초기화: tailscale funnel reset + 기존 앱 프로세스 그룹 정리.
+  # 이전 up이 비정상 종료되었거나 stale한 PID/funnel 상태가 남아있어도
+  # 깨끗한 상태에서 기동을 시작하도록 보장한다.
+  echo "==> [up] 시작 전 reset 수행: tailscale funnel reset + 기존 앱 정리"
+  cmd_down >&2 || true
+  echo "==> [up] reset 완료, 본 기동 시작"
+
   ensure_anchor_funnel
 
   local successful_apps=()
