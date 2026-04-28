@@ -19,7 +19,7 @@ bin/funnel down   examples/config.json
 bin/funnel status examples/config.json
 ```
 
-- `up`: config의 `apps[]`를 순서대로 기동하고 각 앱에 대해 `tailscale funnel`을 오픈. `funnel up` 은 각 앱을 독립적으로 기동하며, 일부 앱이 실패해도 나머지는 계속 기동한다. 마지막에 성공/실패 요약을 출력한다.
+- `up`: **시작 전에 항상 `down`과 동일한 reset(= `tailscale funnel reset` + `apps[]` 역순 프로세스 그룹 정리)을 먼저 수행**한 뒤, config의 `apps[]`를 순서대로 기동하고 각 앱에 대해 `tailscale funnel`을 오픈한다. `funnel up`은 각 앱을 독립적으로 기동하며, 일부 앱이 실패해도 나머지는 계속 기동한다. 마지막에 성공/실패 요약을 출력한다. 이로 인해 이전 up이 비정상 종료되었거나 stale한 PID/funnel 상태가 남아있어도 항상 깨끗한 상태에서 기동이 시작된다.
 - `down`: 같은 config를 기반으로 `tailscale funnel reset` 후 `apps[]`를 역순으로 정리.
 - `status`: 같은 config의 포트별 listen 상태 + `tailscale funnel status`.
 
@@ -80,6 +80,7 @@ bin/funnel status examples/config.json
 ### 동작 요약
 
 - `up`:
+  0. **사전 reset (항상 수행)**: 내부적으로 `down`과 동일한 절차를 먼저 실행한다 — `tailscale funnel reset` 1회 + `apps[]` 역순 pidFile 기반 프로세스 그룹 정리. stale 상태 제거가 목적이며, 정리할 대상이 없으면 무해하게 통과한다.
   1. `anchor.enabled=true`면 config당 1회 anchor funnel을 엽니다.
   2. `apps[]`를 순서대로 순회하며
      - `cwd`에서 `command`를 background로 기동 (`logPath`에 append, PID는 `pidFile`에 기록)
