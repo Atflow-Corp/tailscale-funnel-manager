@@ -38,7 +38,7 @@
       "appName": "kms-react",
       "port": 8443,
       "cwd": "/Users/atflow/repos/KMS/react",
-      "command": "pnpm run dev",
+      "command": "pnpm run dev:funnel",
       "startupWaitSeconds": 30,
       "healthcheckPath": "/",
       "logPath": "/tmp/kms-react.log",
