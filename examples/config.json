@@ -35,6 +35,20 @@
       }
     },
     {
+      "appName": "atflow-digest",
+      "port": 8080,
+      "cwd": "/Users/atflow/repos/atflow-digest",
+      "command": "python3 -m http.server 8080",
+      "startupWaitSeconds": 3,
+      "healthcheckPath": "/",
+      "logPath": "/tmp/atflow-digest.log",
+      "pidFile": "/tmp/atflow-digest.pid",
+      "funnel": {
+        "https": true,
+        "background": true
+      }
+    },
+    {
       "appName": "kms-react",
       "port": 8443,
       "cwd": "/Users/atflow/repos/KMS/react",
